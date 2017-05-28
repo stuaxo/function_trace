@@ -29,6 +29,7 @@ with trace_on([Class1, module1, Class2, module2]):
 '''
 
 from contextlib import contextmanager, closing
+from functools import reduce
 import inspect
 import os
 import sys
@@ -63,9 +64,9 @@ class Formatter(object):
     def format_input(self, level, f, args, kwargs):
         return "%s- %s(%s)" % \
             (level * indentchar, f,
-             ", ".join(map(repr, args) +
-                       map(lambda i: "%s=%s" % (i[0], repr(i[1])),
-                           kwargs.items())))
+             ", ".join(list(map(repr, args)) +
+                       list(map(lambda i: "%s=%s" % (i[0], repr(i[1])),
+                           kwargs.items()))))
 
     def format_output(self, level, returnval, exception):
         return "%s-> %s%s" % (level * indentchar,
@@ -84,13 +85,13 @@ def _get_function_mapping(o):
     # and the function itself is where the tracing info lies
     if inspect.ismethod(o) or inspect.isfunction(o):
         if hasattr(o, 'func'):
-            i = o.func.func_code
+            i = o.func.__code__
         elif hasattr(o, 'im_func'):
-            i = o.im_func.func_code
+            i = o.im_func.__code__
         elif hasattr(o.__call__, 'im_func'):
-            i = o.__call__.im_func.func_code
-        elif hasattr(o, 'func_code'):
-            i = o.func_code
+            i = o.__call__.im_func.__code__
+        elif hasattr(o, '__code__'):
+            i = o.__code__
         return (i, o)
 
     # for objects that implement __call__, like MultiMethods, the identifier is the instance
@@ -124,7 +125,7 @@ class Tracer(object):
                 self.depths[ident] = depths[f]
         # self.count = 0
         # self.skipped = 0
-        self.min_depth = sys.maxint
+        self.min_depth = sys.maxsize
         # self.counts = {}
         self.no_trace = set()
 
@@ -160,7 +161,7 @@ class Tracer(object):
     def _min_depths(self):
         '''Depth-controlled functions will limit the displayed call depth,
            find the most restrictive one (the minimum depth)'''
-        depths = [fmd[1] for fmd in self.tracedframes] or [sys.maxint]
+        depths = [fmd[1] for fmd in self.tracedframes] or [sys.maxsize]
         return min(depths)
 
     @property
@@ -256,11 +257,11 @@ class StdoutTracer(Tracer):
         super(StdoutTracer, self).__init__(functions, formatter=formatter, depths=depths)
 
     def trace_in(self, f, args, kwargs):
-        print self.formatter.format_input(self.level, f, args, kwargs)
+        print(self.formatter.format_input(self.level, f, args, kwargs))
         sys.stdout.flush()
 
     def trace_out(self, r, exception=False):
-        print self.formatter.format_output(self.level - 1, r, exception)
+        print(self.formatter.format_output(self.level - 1, r, exception))
         sys.stdout.flush()
 
     def close(self):
