@@ -29,6 +29,7 @@ with trace_on([Class1, module1, Class2, module2]):
 '''
 
 from contextlib import contextmanager, closing
+from functools import reduce
 import inspect
 import os
 import sys
@@ -63,9 +64,9 @@ class Formatter(object):
     def format_input(self, level, f, args, kwargs):
         return "%s- %s(%s)" % \
             (level * indentchar, f,
-             ", ".join(map(repr, args) +
-                       map(lambda i: "%s=%s" % (i[0], repr(i[1])),
-                           kwargs.items())))
+             ", ".join(list(map(repr, args)) +
+                       list(map(lambda i: "%s=%s" % (i[0], repr(i[1])),
+                           kwargs.items()))))
 
     def format_output(self, level, returnval, exception):
         return "%s-> %s%s" % (level * indentchar,
@@ -84,13 +85,13 @@ def _get_function_mapping(o):
     # and the function itself is where the tracing info lies
     if inspect.ismethod(o) or inspect.isfunction(o):
         if hasattr(o, 'func'):
-            i = o.func.func_code
+            i = o.func.__code__
         elif hasattr(o, 'im_func'):
-            i = o.im_func.func_code
+            i = o.im_func.__code__
         elif hasattr(o.__call__, 'im_func'):
-            i = o.__call__.im_func.func_code
-        elif hasattr(o, 'func_code'):
-            i = o.func_code
+            i = o.__call__.im_func.__code__
+        elif hasattr(o, '__code__'):
+            i = o.__code__
         return (i, o)
 
     # for objects that implement __call__, like MultiMethods, the identifier is the instance
@@ -98,12 +99,12 @@ def _get_function_mapping(o):
     # the module and the function's name is '__call__'.  The first arg is what's important
     # (the instance)
     if hasattr(o, '__call__'):
-        # print "got mm %s" % o
+        # print("got mm %s" % o)
         try:
             # return (o.__call__.im_func.func_code, o.__call__)
             return (o.__call__, o.__call__)
         except:
-            # print o
+            # print(o)
             return (None, None)
     return None
 
@@ -124,7 +125,7 @@ class Tracer(object):
                 self.depths[ident] = depths[f]
         # self.count = 0
         # self.skipped = 0
-        self.min_depth = sys.maxint
+        self.min_depth = sys.maxsize
         # self.counts = {}
         self.no_trace = set()
 
@@ -160,7 +161,7 @@ class Tracer(object):
     def _min_depths(self):
         '''Depth-controlled functions will limit the displayed call depth,
            find the most restrictive one (the minimum depth)'''
-        depths = [fmd[1] for fmd in self.tracedframes] or [sys.maxint]
+        depths = [fmd[1] for fmd in self.tracedframes] or [sys.maxsize]
         return min(depths)
 
     @property
@@ -209,11 +210,11 @@ class Tracer(object):
                         return None
 
             elif event == 'return':
-                # print frame.f_code
+                # print(frame.f_code)
                 if self.exception_frame:
                     self.exception_frame = None
                 elif self.tracedframes and self.tracedframes[-1][0] is frame.f_back:
-                    # print self.tracedframes
+                    # print(self.tracedframes)
                     if self.tracedframes[-1][2]:
                         # self.trace_out("%s: %s" % (self._get_id(frame), arg))
                         self.trace_out(arg)
@@ -244,10 +245,10 @@ class Tracer(object):
 
     def close(self):
         pass
-        # print "count=%s, skipped=%s" % (self.count, self.skipped)
+        # print("count=%s, skipped=%s" % (self.count, self.skipped))
         # counts = sorted(self.counts.iteritems(), key=operator.itemgetter(1))
         # counts = counts[-50:]
-        # print "count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, counts)
+        # print("count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, counts))
 
 
 class StdoutTracer(Tracer):
@@ -256,16 +257,16 @@ class StdoutTracer(Tracer):
         super(StdoutTracer, self).__init__(functions, formatter=formatter, depths=depths)
 
     def trace_in(self, f, args, kwargs):
-        print self.formatter.format_input(self.level, f, args, kwargs)
+        print(self.formatter.format_input(self.level, f, args, kwargs))
         sys.stdout.flush()
 
     def trace_out(self, r, exception=False):
-        print self.formatter.format_output(self.level - 1, r, exception)
+        print(self.formatter.format_output(self.level - 1, r, exception))
         sys.stdout.flush()
 
     def close(self):
-        # print "closing " + str(self.outputfile)
-        # print "count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, self.counts)
+        # print("closing " + str(self.outputfile))
+        # print("count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, self.counts))
         pass
 
 
@@ -283,15 +284,15 @@ class PerThreadFileTracer(Tracer):
         self.outputfile = open(filename, 'w')
 
     def trace_in(self, f, args, kwargs):
-        # print "in %s %s %s %s" % (str(self.outputfile), f, args, kwargs)
+        # print("in %s %s %s %s" % (str(self.outputfile), f, args, kwargs))
         self.outputfile.write(self.formatter.format_input(self.level, f, args, kwargs) + "\n")
 
     def trace_out(self, r, exception=False):
         self.outputfile.write(self.formatter.format_output(self.level - 1, r, exception) + "\n")
 
     def close(self):
-        # print "closing " + str(self.outputfile)
-        # print "count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, self.counts)
+        # print("closing " + str(self.outputfile))
+        # print("count=%s, skipped=%s, counts=%s" % (self.count, self.skipped, self.counts))
         self.outputfile.close()
 
 
@@ -316,11 +317,11 @@ def all(o, include_hidden=False):
                 not (include_hidden or n.startswith("_")))\
            and _defined_this_module(o, v):
             if inspect.isclass(v):
-                # print "adding class %s" % v
+                # print("adding class %s" % v)
                 x.extend(all(v))
                 return x
             else:
-                # print "adding function %s " % v
+                # print("adding function %s " % v)
                 x.append(v)
                 return x
         else:
